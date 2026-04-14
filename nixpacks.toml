@@ -1,1 +1,5 @@
+[phases.setup]
+nixPkgs = ["chromium", "xvfb-run"]
 
+[phases.install]
+cmds = ["pip install -r requirements.txt", "playwright install chromium"]
