@@ -1,3 +1,4 @@
 discord.py
 playwright
 python-dotenv
+httpx
