@@ -19,6 +19,46 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 
+@bot.command(name="debug")
+async def debug(ctx):
+    """Show system info to help debug Chromium issues."""
+    import subprocess, shutil
+    lines = []
+
+    # Check PATH-based lookups
+    for name in ["chromium", "chromium-browser", "google-chrome"]:
+        found = shutil.which(name)
+        lines.append(f"`which {name}` → {found or 'not found'}")
+
+    # Search Nix store
+    try:
+        result = subprocess.run(
+            ["find", "/nix", "-name", "chromium", "-type", "f"],
+            capture_output=True, text=True, timeout=10
+        )
+        nix_hits = [l for l in result.stdout.strip().split("\n") if l]
+        if nix_hits:
+            for h in nix_hits[:5]:
+                lines.append(f"Nix store: `{h}`")
+        else:
+            lines.append("Nix store: no 'chromium' binary found")
+    except Exception as e:
+        lines.append(f"Nix search error: {e}")
+
+    # Check Playwright browsers
+    try:
+        result = subprocess.run(
+            ["python", "-c", "from playwright._impl._driver import compute_driver_executable; print(compute_driver_executable())"],
+            capture_output=True, text=True, timeout=5
+        )
+        lines.append(f"Playwright driver: `{result.stdout.strip()}`")
+    except Exception:
+        pass
+
+    msg = "**Debug Info:**\n" + "\n".join(lines)
+    await ctx.send(msg)
+
+
 @bot.command(name="goto")
 async def goto(ctx, url: str):
     """Navigate to a URL and screenshot it. Usage: !goto https://example.com"""
