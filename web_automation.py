@@ -1,9 +1,28 @@
 import os
+import shutil
 from playwright.async_api import async_playwright
+from captcha_solver import detect_and_solve_captcha
 
 SITE_URL = os.environ.get("SITE_URL", "")
 SITE_USERNAME = os.environ.get("SITE_USERNAME", "")
 SITE_PASSWORD = os.environ.get("SITE_PASSWORD", "")
+
+
+def find_chromium_path() -> str:
+    """Find the system-installed Chromium binary."""
+    candidates = [
+        shutil.which("chromium"),
+        shutil.which("chromium-browser"),
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/nix/var/nix/profiles/default/bin/chromium",
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    raise FileNotFoundError(
+        "Chromium not found. Make sure it's in nixpacks.toml"
+    )
 
 
 class WebAutomation:
@@ -13,11 +32,13 @@ class WebAutomation:
         self.page = None
 
     async def ensure_browser(self):
-        """Start browser if not already running."""
+        """Start browser using system-installed Chromium."""
         if not self.browser or not self.browser.is_connected():
             self.playwright = await async_playwright().start()
+            chromium_path = find_chromium_path()
             self.browser = await self.playwright.chromium.launch(
                 headless=True,
+                executable_path=chromium_path,
                 args=["--no-sandbox", "--disable-dev-shm-usage"],
             )
             self.page = await self.browser.new_page(
@@ -29,6 +50,10 @@ class WebAutomation:
         path = f"/tmp/{label}.png"
         await self.page.screenshot(path=path, full_page=False)
         return path
+
+    async def solve_captcha(self) -> str:
+        """Detect and solve any captcha on the current page."""
+        return await detect_and_solve_captcha(self.page)
 
     async def run_login(self) -> str:
         """
@@ -45,40 +70,27 @@ class WebAutomation:
         # Step 2: Fill in password
         await self.page.fill('input[name="password"]', SITE_PASSWORD)
 
-        # Step 3: Click the login/submit button
+        # Step 3: Solve captcha if present
+        captcha_result = await self.solve_captcha()
+
+        # Step 4: Click the login/submit button
         await self.page.click('button[type="submit"]')
 
-        # Step 4: Wait for the page to load after login
+        # Step 5: Wait for the page to load after login
         await self.page.wait_for_load_state("networkidle", timeout=15000)
 
-        return "Login complete."
+        return f"Login complete. Captcha: {captcha_result}"
 
     async def run_full_task(self) -> str:
         """
         Full automated task: login then do your steps.
         Customize the steps below for YOUR use case.
         """
-        # Login first
         await self.run_login()
 
         # --- ADD YOUR STEPS HERE ---
-        # Examples:
-        #
-        # Click a navigation link:
-        #   await self.page.click('text=Dashboard')
-        #   await self.page.wait_for_load_state("networkidle")
-        #
-        # Click a button by ID:
-        #   await self.page.click('#submit-order')
-        #
-        # Select a dropdown option:
-        #   await self.page.select_option('select#plan', 'premium')
-        #
-        # Wait for a specific element to appear:
-        #   await self.page.wait_for_selector('.success-message', timeout=10000)
-        #
-        # Read text from the page:
-        #   text = await self.page.inner_text('.result-panel')
+        # await self.page.click('text=Dashboard')
+        # await self.page.wait_for_load_state("networkidle")
 
         return "Full task completed."
 
