@@ -166,6 +166,21 @@ async def close_browser(ctx):
     await ctx.send("Browser closed.")
 
 
+@bot.command(name="captcha")
+async def solve_captcha(ctx):
+    """Detect and solve a captcha on the current page."""
+    if not web.page:
+        await ctx.send("No browser open yet. Use `!goto <url>` first.")
+        return
+    try:
+        await ctx.send("Detecting captcha... this may take up to 2 minutes.")
+        result = await web.solve_captcha()
+        path = await web.screenshot("after_captcha")
+        await ctx.send(f"{result}", file=discord.File(path))
+    except Exception as e:
+        await ctx.send(f"Captcha solving failed: {e}")
+
+
 @bot.command(name="help_bot")
 async def help_bot(ctx):
     """Show all available commands."""
@@ -176,6 +191,7 @@ async def help_bot(ctx):
 `!html` — List all clickable elements and input fields on the page
 `!click <selector>` — Click an element (e.g. `!click #login-btn` or `!click text=Submit`)
 `!type <selector> <text>` — Type into a field (e.g. `!type input[name=email] me@test.com`)
+`!captcha` — Detect and solve a captcha on the current page
 `!login` — Run the automated login sequence
 `!run` — Run the full automated task
 `!close` — Close the browser
