@@ -8,21 +8,55 @@ SITE_USERNAME = os.environ.get("SITE_USERNAME", "")
 SITE_PASSWORD = os.environ.get("SITE_PASSWORD", "")
 
 
+import subprocess
+
+
 def find_chromium_path() -> str:
-    """Find the system-installed Chromium binary."""
+    """Find the system-installed Chromium binary by searching everywhere."""
+    # 1. Try common locations and PATH
     candidates = [
         shutil.which("chromium"),
         shutil.which("chromium-browser"),
+        shutil.which("google-chrome"),
+        shutil.which("google-chrome-stable"),
         "/usr/bin/chromium",
         "/usr/bin/chromium-browser",
         "/nix/var/nix/profiles/default/bin/chromium",
     ]
     for path in candidates:
         if path and os.path.isfile(path):
+            print(f"[Chromium] Found at: {path}")
             return path
-    raise FileNotFoundError(
-        "Chromium not found. Make sure it's in nixpacks.toml"
-    )
+
+    # 2. Search the Nix store (Railway uses Nix)
+    try:
+        result = subprocess.run(
+            ["find", "/nix", "-name", "chromium", "-type", "f"],
+            capture_output=True, text=True, timeout=10
+        )
+        for line in result.stdout.strip().split("\n"):
+            if line and os.path.isfile(line) and os.access(line, os.X_OK):
+                print(f"[Chromium] Found in Nix store: {line}")
+                return line
+    except Exception as e:
+        print(f"[Chromium] Nix search failed: {e}")
+
+    # 3. Try 'which' via shell as a last resort
+    try:
+        result = subprocess.run(
+            ["bash", "-lc", "which chromium || which chromium-browser"],
+            capture_output=True, text=True, timeout=5
+        )
+        path = result.stdout.strip()
+        if path and os.path.isfile(path):
+            print(f"[Chromium] Found via shell: {path}")
+            return path
+    except Exception:
+        pass
+
+    # 4. Let Playwright try its own default (no executable_path)
+    print("[Chromium] Not found anywhere, will let Playwright try its default")
+    return None
 
 
 class WebAutomation:
@@ -36,11 +70,13 @@ class WebAutomation:
         if not self.browser or not self.browser.is_connected():
             self.playwright = await async_playwright().start()
             chromium_path = find_chromium_path()
-            self.browser = await self.playwright.chromium.launch(
-                headless=True,
-                executable_path=chromium_path,
-                args=["--no-sandbox", "--disable-dev-shm-usage"],
-            )
+            launch_args = {
+                "headless": True,
+                "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            }
+            if chromium_path:
+                launch_args["executable_path"] = chromium_path
+            self.browser = await self.playwright.chromium.launch(**launch_args)
             self.page = await self.browser.new_page(
                 viewport={"width": 1280, "height": 800}
             )
